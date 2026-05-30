@@ -156,7 +156,7 @@ async def chat_stream(request: ChatRequest):
         raise HTTPException(status_code=404, detail="Unknown pair_id")
     # Determine provider and enforce per-provider budget (and optionally daily reset) before starting generation
     try:
-        provider, model_name = selected_llm_identity(request.provider, request.model)
+        provider, model_name = selected_llm_identity(request.model)
     except RuntimeError as exc:
         # Surface a clear HTTP error so the frontend can show a user-friendly message
         raise HTTPException(status_code=503, detail=str(exc))
@@ -185,7 +185,6 @@ async def chat_stream(request: ChatRequest):
             thread_id=request.thread_id,
             question=request.message,
             pair_payload=pair_payload,
-            provider=request.provider,
             model=request.model,
         ):
             output_chars += len(token)

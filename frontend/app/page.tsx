@@ -82,6 +82,10 @@ function formatDuration(seconds?: number | null) {
   return `${minutes}:${String(remaining).padStart(2, "0")}`;
 }
 
+function isPairNotFound(value: unknown) {
+  return typeof value === "string" && value.toLowerCase().includes("unknown pair_id");
+}
+
 export default function Home() {
   const [videoAUrl, setVideoAUrl] = useState("");
   const [videoBUrl, setVideoBUrl] = useState("");
@@ -98,6 +102,7 @@ export default function Home() {
   const [selectedModel, setSelectedModel] = usePersistentState<string | null>("creator-rag-model", null);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [ingesting, setIngesting] = useState(false);
   const threadId = useMemo(() => "thread-main", []);
   const logRef = useRef<HTMLDivElement | null>(null);
 
@@ -113,7 +118,18 @@ export default function Home() {
   useEffect(() => {
     if (pair?.pair_id) {
       fetch(`${BACKEND_URL}/api/pairs/${pair.pair_id}`)
-        .then((response) => (response.ok ? response.json() : null))
+        .then(async (response) => {
+          if (response.ok) return response.json();
+          if (response.status === 404) {
+            setPair(null);
+            setMessages([]);
+            setSources([]);
+            setCredits(null);
+            setError("Saved pair is no longer available. Please ingest the videos again.");
+            window.localStorage.removeItem("creator-rag-pair");
+          }
+          return null;
+        })
         .then((payload) => {
           if (payload?.videos) {
             setPair(payload);
@@ -185,7 +201,9 @@ export default function Home() {
 
   async function handleIngest(event: FormEvent) {
     event.preventDefault();
+    if (ingesting) return;
     setLoading(true);
+    setIngesting(true);
     setError("");
     setSources([]);
     try {
@@ -206,6 +224,7 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Ingestion failed.");
     } finally {
       setLoading(false);
+      setIngesting(false);
     }
   }
 
@@ -286,7 +305,17 @@ export default function Home() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Chat failed.");
+      const message = err instanceof Error ? err.message : "Chat failed.";
+      if (isPairNotFound(message)) {
+        setPair(null);
+        setMessages([]);
+        setSources([]);
+        setCredits(null);
+        window.localStorage.removeItem("creator-rag-pair");
+        setError("Saved pair is no longer available. Please ingest the videos again.");
+      } else {
+        setError(message);
+      }
       setMessages((current) => current.slice(0, -1));
     } finally {
       setStreaming(false);
@@ -295,6 +324,7 @@ export default function Home() {
   }
 
   const usedPercent = Math.min(100, Math.max(0, credits?.used_percent ?? 0));
+  const budgetIsFinite = (credits?.budget_usd ?? 0) > 0;
 
   const promptPresets = [
     "Why did Video A get more engagement than Video B?",
@@ -339,6 +369,15 @@ export default function Home() {
         <div className="left-column">
           <form className="panel" onSubmit={handleIngest}>
             <h2>Load the two URLs</h2>
+            {ingesting ? (
+              <div className="ingest-banner" aria-live="polite">
+                <div className="ingest-spinner" />
+                <div>
+                  <div className="ingest-title">Ingesting videos</div>
+                  <div className="small">Fetching metadata, transcript, and chunks. This can take a moment.</div>
+                </div>
+              </div>
+            ) : null}
             <div className="form-grid">
               <div className="field">
                 <label htmlFor="video-a">YouTube URL</label>
@@ -359,7 +398,7 @@ export default function Home() {
                 />
               </div>
               <div className="row">
-                <button className="button" type="submit" disabled={loading}>
+                <button className="button primary" type="submit" disabled={loading || ingesting}>
                   {loading ? "Loading videos..." : "Ingest videos"}
                 </button>
                 <button
@@ -483,14 +522,19 @@ export default function Home() {
             </div>
 
             <div className="row">
-              <button
-                className="button"
-                type="button"
-                disabled={!pair || streaming || !question.trim() || (credits?.remaining_usd ?? 0) <= 0}
-                onClick={() => sendMessage(question)}
-              >
-                {streaming ? "Streaming answer..." : "Send"}
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={!pair || streaming || !question.trim() || (budgetIsFinite && (credits?.remaining_usd ?? 0) <= 0)}
+                  onClick={() => sendMessage(question)}
+                >
+                  {streaming ? "Streaming answer..." : "Send"}
+                </button>
+                <div className="small" style={{ color: (!pair ? 'var(--muted)' : streaming ? 'var(--muted)' : (budgetIsFinite && (credits?.remaining_usd ?? 0) <= 0) ? 'var(--danger)' : 'var(--muted)') }}>
+                  {!pair ? 'Ingest videos to enable chat' : streaming ? 'Answer streaming' : (budgetIsFinite && (credits?.remaining_usd ?? 0) <= 0) ? 'Insufficient credits' : ''}
+                </div>
+              </div>
             </div>
 
             <div className="chat-log" ref={logRef}>
