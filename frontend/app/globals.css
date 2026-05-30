@@ -418,6 +418,26 @@ textarea {
   color: var(--danger);
 }
 
+.typing {
+  display: inline-block;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+@keyframes typingFade {
+  0% { opacity: 0.2; }
+  50% { opacity: 0.9; }
+  100% { opacity: 0.2; }
+}
+
+.typing::after {
+  content: '● ● ●';
+  display: inline-block;
+  margin-left: 6px;
+  animation: typingFade 1s infinite ease-in-out;
+}
+
 @media (max-width: 1024px) {
   .hero,
   .workspace,

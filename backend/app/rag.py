@@ -5,7 +5,6 @@ from typing import Iterable
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI
 
 from .config import settings
 from .storage import append_message, load_messages
@@ -22,33 +21,27 @@ class Citation:
     source_url: str
 
 
-def selected_llm_identity() -> tuple[str, str]:
+def selected_llm_identity(override_model: str | None = None) -> tuple[str, str]:
+    """Return ('gemini', model) tuple. Overrides take precedence; otherwise env settings are used.
+
+    Raises RuntimeError if GOOGLE_API_KEY is not configured.
+    """
     config = settings()
-    if config["google_api_key"]:
-        return ("gemini", config["gemini_model"])
-    if config["openai_api_key"]:
-        return ("openai", config["openai_model"])
-    raise RuntimeError("Set GOOGLE_API_KEY to use Gemini or OPENAI_API_KEY to use OpenAI.")
+    model = override_model or config.get("gemini_model")
+    if config.get("google_api_key"):
+        return ("gemini", model)
+    raise RuntimeError("Set GOOGLE_API_KEY to use Gemini.")
 
 
-def _build_model():
-    provider, model_name = selected_llm_identity()
+def _build_model(override_model: str | None = None):
+    _, model_name = selected_llm_identity(override_model)
     config = settings()
-    if provider == "gemini":
-        return ChatGoogleGenerativeAI(
-            model=model_name,
-            google_api_key=config["google_api_key"],
-            temperature=0.2,
-            streaming=True,
-        )
-    if provider == "openai":
-        return ChatOpenAI(
-            api_key=config["openai_api_key"],
-            model=model_name,
-            streaming=True,
-            temperature=0.2,
-        )
-    raise RuntimeError("Unknown LLM provider configuration.")
+    return ChatGoogleGenerativeAI(
+        model=model_name,
+        google_api_key=config["google_api_key"],
+        temperature=0.2,
+        streaming=True,
+    )
 
 
 def _messages_for_prompt(history: list[dict[str, str]], question: str, context: str) -> list[BaseMessage]:
@@ -83,7 +76,7 @@ def _format_context(citations: Iterable[Citation], pair_payload: dict) -> str:
     return "\n".join(lines).strip()
 
 
-async def stream_answer(*, pair_id: str, thread_id: str, question: str, pair_payload: dict):
+async def stream_answer(*, pair_id: str, thread_id: str, question: str, pair_payload: dict, model: str | None = None):
     history = load_messages(pair_id, thread_id)
     docs = search_documents(question, pair_id=pair_id, limit=6)
     citations = [
@@ -99,7 +92,7 @@ async def stream_answer(*, pair_id: str, thread_id: str, question: str, pair_pay
     ]
     context = _format_context(citations, pair_payload)
     messages = _messages_for_prompt(history, question, context)
-    model = _build_model()
+    model = _build_model(model)
     answer_parts: list[str] = []
     async for chunk in model.astream(messages):
         token = getattr(chunk, "content", "") or ""

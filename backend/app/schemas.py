@@ -12,6 +12,8 @@ class ChatRequest(BaseModel):
     pair_id: str = Field(min_length=1)
     message: str = Field(min_length=1)
     thread_id: str = Field(min_length=1)
+    provider: str | None = None
+    model: str | None = None
 
 
 class SourceChunk(BaseModel):

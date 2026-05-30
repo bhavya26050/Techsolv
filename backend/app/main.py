@@ -5,6 +5,8 @@ import uuid
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi import Body
+import requests
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langchain_core.documents import Document
@@ -13,6 +15,7 @@ from .metadata import inspect_video
 from .budget import credit_status, estimate_credits_used_usd, estimate_tokens_from_text, minimum_remaining_credit_usd
 from .rag import build_citation_payload, stream_answer
 from .schemas import ChatRequest, IngestRequest, IngestResponse
+from .config import settings
 from .storage import initialize, load_messages, load_pair, record_credit_usage, save_pair
 from .transcript import segments_to_text
 from .vectorstore import chunk_transcript, upsert_documents
@@ -90,15 +93,70 @@ def get_credits(pair_id: str, thread_id: str | None = None, provider: str | None
     return credit_status(pair_id, thread_id)
 
 
+@app.get("/api/providers")
+def get_providers() -> dict[str, dict[str, str | bool]]:
+    """Return available providers and their configured default models.
+
+    Example response:
+    {"gemini": {"available": True, "model": "gemini-2.0-flash"}, "openai": {...}}
+    """
+    cfg = settings()
+    return {
+        "gemini": {"available": bool(cfg.get("google_api_key")), "model": cfg.get("gemini_model")}
+    }
+
+
+@app.post("/api/admin/reload-config")
+def reload_config() -> dict:
+    """Reload configuration from environment and .env (dev-only).
+
+    This clears the cached `settings()` so changes to .env are picked up without restarting.
+    """
+    try:
+        settings.cache_clear()
+    except Exception:
+        pass
+    cfg = settings()
+    return {"ok": True, "gemini_available": bool(cfg.get("google_api_key")), "openai_available": bool(cfg.get("openai_api_key"))}
+
+
+@app.post("/api/providers/test")
+def test_provider(payload: dict = Body(...)) -> dict:
+    """Perform a lightweight live test against a provider.
+
+    Expected payload: {"provider":"gemini"|"openai", "model": "model-name"}
+    This performs a minimal generation request; it will consume a small amount of quota on real keys.
+    """
+    provider = str(payload.get("provider", "")).lower()
+    model = payload.get("model") or ""
+    cfg = settings()
+
+    if provider == "gemini":
+        api_key = cfg.get("google_api_key")
+        if not api_key:
+            return {"ok": False, "error": "GOOGLE_API_KEY not configured"}
+        model_name = model or cfg.get("gemini_model")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+        body = {"contents": [{"parts": [{"text": "Say ok"}]}]}
+        try:
+            resp = requests.post(url, json=body, headers={"Content-Type": "application/json", "X-goog-api-key": api_key}, timeout=10)
+            resp.raise_for_status()
+            j = resp.json()
+            return {"ok": True, "provider": "gemini", "model": model_name, "status_code": resp.status_code, "result": str(j) }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    return {"ok": False, "error": "unsupported provider"}
+
+
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):
     pair_payload = load_pair(request.pair_id)
     if not pair_payload:
         raise HTTPException(status_code=404, detail="Unknown pair_id")
-
     # Determine provider and enforce per-provider budget (and optionally daily reset) before starting generation
     try:
-        provider, model_name = selected_llm_identity()
+        provider, model_name = selected_llm_identity(request.provider, request.model)
     except RuntimeError as exc:
         # Surface a clear HTTP error so the frontend can show a user-friendly message
         raise HTTPException(status_code=503, detail=str(exc))
@@ -122,7 +180,14 @@ async def chat_stream(request: ChatRequest):
         evidence_text = "\n".join(source.get("excerpt", "") for source in citations)
         input_tokens_est = estimate_tokens_from_text(f"{history_text}\n{request.message}\n{evidence_text}")
         output_chars = 0
-        async for token in stream_answer(pair_id=request.pair_id, thread_id=request.thread_id, question=request.message, pair_payload=pair_payload):
+        async for token in stream_answer(
+            pair_id=request.pair_id,
+            thread_id=request.thread_id,
+            question=request.message,
+            pair_payload=pair_payload,
+            provider=request.provider,
+            model=request.model,
+        ):
             output_chars += len(token)
             yield f"event: token\ndata: {json.dumps(token)}\n\n"
         output_tokens_est = estimate_tokens_from_text("x" * output_chars)

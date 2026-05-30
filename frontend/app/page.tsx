@@ -93,6 +93,11 @@ export default function Home() {
   const [error, setError] = useState("");
   const [sources, setSources] = useState<SourceChunk[]>([]);
   const [credits, setCredits] = useState<CreditStatus | null>(null);
+  const [providers, setProviders] = useState<Record<string, { available: boolean; model: string }>>({});
+  const [selectedProvider, setSelectedProvider] = usePersistentState<string | null>("creator-rag-provider", null);
+  const [selectedModel, setSelectedModel] = usePersistentState<string | null>("creator-rag-model", null);
+  const [testStatus, setTestStatus] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testing, setTesting] = useState(false);
   const threadId = useMemo(() => "thread-main", []);
   const logRef = useRef<HTMLDivElement | null>(null);
 
@@ -118,6 +123,58 @@ export default function Home() {
         .catch(() => undefined);
     }
   }, [pair?.pair_id, setPair, threadId]);
+
+    useEffect(() => {
+      // Fetch providers and automatically test available ones in priority order.
+      (async () => {
+        try {
+          const r = await fetch(`${BACKEND_URL}/api/providers`);
+          const body = r.ok ? await r.json() : {};
+          const respBody = (body ?? {}) as any;
+          setProviders(respBody ?? {});
+
+          // If user already selected a provider earlier, skip auto-detect
+          if (selectedProvider) return;
+
+          const priority = ["gemini"];
+          for (const key of priority) {
+            const info = respBody?.[key];
+            if (!info || !info.available) continue;
+            // try a quick live test
+            setTesting(true);
+            setTestStatus(null);
+            try {
+              const res = await fetch(`${BACKEND_URL}/api/providers/test`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: key, model: info.model }),
+              });
+              const j = await res.json();
+              if (j.ok) {
+                setSelectedProvider(key);
+                setSelectedModel(info.model ?? null);
+                setTestStatus({ ok: true, message: `Using ${key} — ${info.model}` });
+                setTesting(false);
+                return;
+              } else {
+                // record failure and try next
+                setTestStatus({ ok: false, message: `${key} test failed: ${j.error ?? 'unknown'}` });
+              }
+            } catch (err) {
+              setTestStatus({ ok: false, message: String(err) });
+            } finally {
+              setTesting(false);
+            }
+          }
+
+          // No provider succeeded
+          setTestStatus({ ok: false, message: 'No working Gemini provider found. Set GOOGLE_API_KEY.' });
+        } catch {
+          setProviders({});
+          setTestStatus({ ok: false, message: 'Failed to fetch providers' });
+        }
+      })();
+    }, [selectedProvider, setSelectedModel, setSelectedProvider]);
 
   useEffect(() => {
     const node = logRef.current;
@@ -163,7 +220,7 @@ export default function Home() {
       const response = await fetch(`${BACKEND_URL}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pair_id: pair.pair_id, message: nextQuestion, thread_id: threadId }),
+        body: JSON.stringify({ pair_id: pair.pair_id, message: nextQuestion, thread_id: threadId, model: selectedModel }),
       });
       if (!response.ok || !response.body) {
         let detail = "Streaming endpoint unavailable.";
@@ -377,6 +434,16 @@ export default function Home() {
           <section className="panel chat-box">
             <h2>Chat with memory</h2>
             {error ? <div className="error-banner">{error}</div> : null}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <div className="small">Model status:</div>
+              {testing ? (
+                <div className="small">Testing provider…</div>
+              ) : testStatus ? (
+                <div className={testStatus.ok ? 'small' : 'error'}>{testStatus.message}</div>
+              ) : (
+                <div className="small">Detecting provider…</div>
+              )}
+            </div>
             <div className="credit-meter">
               <div className="credit-head">
                 <span className="small">Credit usage</span>
@@ -429,7 +496,7 @@ export default function Home() {
             <div className="chat-log" ref={logRef}>
               {messages.length ? messages.map((message, index) => (
                 <div className={`bubble ${message.role}`} key={`${message.role}-${index}`}>
-                  {message.content || (message.role === "assistant" && streaming ? "Thinking..." : "")}
+                  {message.content || (message.role === "assistant" && streaming ? <span className="typing">● ● ●</span> : "")}
                 </div>
               )) : <div className="small">Load the videos, then ask one of the preset questions to start the RAG flow.</div>}
             </div>
