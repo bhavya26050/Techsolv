@@ -96,8 +96,12 @@ async def chat_stream(request: ChatRequest):
     if not pair_payload:
         raise HTTPException(status_code=404, detail="Unknown pair_id")
 
-    # Enforce per-provider budget (and optionally daily reset) before starting generation
-    provider, model_name = selected_llm_identity()
+    # Determine provider and enforce per-provider budget (and optionally daily reset) before starting generation
+    try:
+        provider, model_name = selected_llm_identity()
+    except RuntimeError as exc:
+        # Surface a clear HTTP error so the frontend can show a user-friendly message
+        raise HTTPException(status_code=503, detail=str(exc))
     from .budget import provider_credit_status
 
     provider_status = provider_credit_status(request.pair_id, provider, request.thread_id)

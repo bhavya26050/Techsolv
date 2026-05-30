@@ -376,6 +376,7 @@ export default function Home() {
         <div className="right-column">
           <section className="panel chat-box">
             <h2>Chat with memory</h2>
+            {error ? <div className="error-banner">{error}</div> : null}
             <div className="credit-meter">
               <div className="credit-head">
                 <span className="small">Credit usage</span>
