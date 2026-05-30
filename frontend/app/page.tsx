@@ -394,6 +394,27 @@ export default function Home() {
 
   const usedPercent = Math.min(100, Math.max(0, credits?.used_percent ?? 0));
   const budgetIsFinite = (credits?.budget_usd ?? 0) > 0;
+  const remainingPercent = Math.max(0, 100 - usedPercent);
+
+  function creditSeverityClass() {
+    if (!budgetIsFinite) return "good";
+    // Remaining percent thresholds: >40% green, 15-40% yellow, <15% red
+    if (remainingPercent > 40) return "good";
+    if (remainingPercent > 15) return "warn";
+    return "low";
+  }
+  const criticalThreshold = 5; // percent
+  const [flash, setFlash] = useState(false);
+
+  useEffect(() => {
+    if (!budgetIsFinite) return;
+    if (remainingPercent <= criticalThreshold) {
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 2200);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [remainingPercent, budgetIsFinite]);
 
   const promptPresets = [
     "Why did Video A get more engagement than Video B?",
@@ -555,10 +576,11 @@ export default function Home() {
             <div className="credit-meter">
               <div className="credit-head">
                 <span className="small">Credit usage</span>
-                <span className="small">{(credits?.used_usd ?? 0).toFixed(4)} / {(credits?.budget_usd ?? 0).toFixed(2)} USD</span>
+                <span className="small">{(credits?.used_usd ?? 0).toFixed(4)} / {(credits?.budget_usd ?? 0) > 0 ? (credits?.budget_usd ?? 0).toFixed(2) + ' USD' : 'Free tier'}</span>
               </div>
               <div className="credit-track" aria-label="Credit usage bar">
-                <div className="credit-fill" style={{ width: `${usedPercent}%` }} />
+                <div className={`credit-fill ${creditSeverityClass()} ${flash ? 'flashing' : ''}`} style={{ width: `${usedPercent}%` }} />
+                <div className={`credit-knob ${creditSeverityClass()} ${flash ? 'flashing' : ''}`} style={{ left: `${usedPercent}%`, transform: 'translateX(-50%)' }} aria-hidden />
               </div>
               <div className="credit-foot">
                 <span className="small">Used: {(credits?.used_usd ?? 0).toFixed(4)} USD</span>

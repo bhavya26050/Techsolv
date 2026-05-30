@@ -398,6 +398,72 @@ textarea {
   animation: creditPulse 1.8s ease-in-out infinite;
 }
 
+.credit-fill.good {
+  background: linear-gradient(90deg, #34d399, #10b981); /* green */
+  box-shadow: 0 6px 24px rgba(16,185,129,0.18);
+}
+
+.credit-fill.warn {
+  background: linear-gradient(90deg, #f59e0b, #f97316); /* amber/orange */
+  box-shadow: 0 6px 24px rgba(249,115,22,0.14);
+}
+
+.credit-fill.low {
+  background: linear-gradient(90deg, #fb7185, #ef4444); /* red */
+  box-shadow: 0 6px 24px rgba(239,68,68,0.14);
+}
+
+.credit-knob {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: left 0.8s cubic-bezier(0.18, 0.84, 0.28, 1.0), background 0.4s ease, box-shadow 0.4s ease;
+  z-index: 2;
+  border: 2px solid rgba(255,255,255,0.08);
+}
+
+.credit-knob.good {
+  background: #34d399;
+  box-shadow: 0 6px 18px rgba(16,185,129,0.22);
+}
+
+.credit-knob.warn {
+  background: #f59e0b;
+  box-shadow: 0 6px 18px rgba(249,115,22,0.18);
+}
+
+.credit-knob.low {
+  background: #ef4444;
+  box-shadow: 0 6px 18px rgba(239,68,68,0.18);
+}
+
+.credit-fill.flashing {
+  animation: flashFill 1.1s ease-in-out 0s 2;
+}
+
+.credit-knob.flashing {
+  animation: flashKnob 1.1s ease-in-out 0s 2;
+}
+
+@keyframes flashFill {
+  0% { filter: brightness(1); }
+  25% { filter: brightness(1.35) saturate(1.2); }
+  50% { filter: brightness(1); }
+  75% { filter: brightness(1.35) saturate(1.2); }
+  100% { filter: brightness(1); }
+}
+
+@keyframes flashKnob {
+  0% { transform: translate(-50%, -50%) scale(1); }
+  25% { transform: translate(-50%, -50%) scale(1.18); }
+  50% { transform: translate(-50%, -50%) scale(1); }
+  75% { transform: translate(-50%, -50%) scale(1.12); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
 @keyframes creditPulse {
   0% {
     filter: brightness(0.95);
