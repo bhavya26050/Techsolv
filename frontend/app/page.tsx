@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 type VideoMetadata = {
   video_id: string;
@@ -84,6 +84,75 @@ function formatDuration(seconds?: number | null) {
 
 function isPairNotFound(value: unknown) {
   return typeof value === "string" && value.toLowerCase().includes("unknown pair_id");
+}
+
+function renderInlineMarkdown(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
+}
+
+function renderAssistantContent(content: string) {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const nodes: ReactNode[] = [];
+  let listItems: string[] = [];
+  let listType: "ul" | "ol" | null = null;
+
+  const flushList = () => {
+    if (!listItems.length || !listType) return;
+    const items = listItems.map((item, index) => <li key={`${listType}-${index}`}>{renderInlineMarkdown(item)}</li>);
+    nodes.push(listType === "ol" ? <ol key={`ol-${nodes.length}`}>{items}</ol> : <ul key={`ul-${nodes.length}`}>{items}</ul>);
+    listItems = [];
+    listType = null;
+  };
+
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushList();
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.*)$/);
+    if (heading) {
+      flushList();
+      nodes.push(
+        <div className={`md-heading level-${heading[1].length}`} key={`heading-${index}`}>
+          {renderInlineMarkdown(heading[2])}
+        </div>,
+      );
+      continue;
+    }
+
+    const bullet = trimmed.match(/^[-*]\s+(.*)$/);
+    if (bullet) {
+      if (listType && listType !== "ul") flushList();
+      listType = "ul";
+      listItems.push(bullet[1]);
+      continue;
+    }
+
+    const numbered = trimmed.match(/^\d+\.\s+(.*)$/);
+    if (numbered) {
+      if (listType && listType !== "ol") flushList();
+      listType = "ol";
+      listItems.push(numbered[1]);
+      continue;
+    }
+
+    flushList();
+    nodes.push(
+      <p key={`p-${index}`}>
+        {renderInlineMarkdown(trimmed)}
+      </p>,
+    );
+  }
+
+  flushList();
+  return <div className="message-markdown">{nodes}</div>;
 }
 
 export default function Home() {
@@ -540,7 +609,9 @@ export default function Home() {
             <div className="chat-log" ref={logRef}>
               {messages.length ? messages.map((message, index) => (
                 <div className={`bubble ${message.role}`} key={`${message.role}-${index}`}>
-                  {message.content || (message.role === "assistant" && streaming ? <span className="typing">● ● ●</span> : "")}
+                  {message.role === "assistant"
+                    ? (message.content ? renderAssistantContent(message.content) : (streaming ? <span className="typing">● ● ●</span> : ""))
+                    : (message.content || "")}
                 </div>
               )) : <div className="small">Load the videos, then ask one of the preset questions to start the RAG flow.</div>}
             </div>

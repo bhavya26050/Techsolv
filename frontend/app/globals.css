@@ -437,6 +437,42 @@ textarea {
 .bubble.assistant {
   background: linear-gradient(180deg, rgba(124,240,200,0.08), rgba(124,240,200,0.04));
   box-shadow: 0 8px 20px rgba(124,240,200,0.04);
+  white-space: normal;
+}
+
+.message-markdown {
+  display: grid;
+  gap: 10px;
+}
+
+.message-markdown p,
+.message-markdown ul,
+.message-markdown ol {
+  margin: 0;
+}
+
+.message-markdown ul,
+.message-markdown ol {
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.md-heading {
+  font-weight: 800;
+  color: var(--text);
+}
+
+.md-heading.level-1 {
+  font-size: 18px;
+}
+
+.md-heading.level-2 {
+  font-size: 16px;
+}
+
+.md-heading.level-3 {
+  font-size: 15px;
 }
 
 .sources {
