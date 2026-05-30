@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import re
+from datetime import datetime, timezone
+from typing import Any
+
+import instaloader
+import yt_dlp
+
+from .schemas import VideoMetadata
+from .transcript import TranscriptSegment, fetch_fallback_transcript, fetch_youtube_transcript, first_seconds_preview, segments_to_text
+
+
+HASHTAG_RE = re.compile(r"#([A-Za-z0-9_]+)")
+
+
+def _extract_platform(url: str) -> str:
+    lowered = url.lower()
+    if "youtube.com" in lowered or "youtu.be" in lowered:
+        return "youtube"
+    if "instagram.com" in lowered:
+        return "instagram"
+    return "unknown"
+
+
+def _extract_hashtags(info: dict[str, Any]) -> list[str]:
+    tags = set()
+    for tag in info.get("tags") or []:
+        tags.add(str(tag).lstrip("#"))
+    description = str(info.get("description") or "")
+    for match in HASHTAG_RE.findall(description):
+        tags.add(match)
+    return sorted(tags)
+
+
+def _format_upload_date(info: dict[str, Any]) -> str | None:
+    upload_date = info.get("upload_date")
+    timestamp = info.get("timestamp")
+    if upload_date:
+        try:
+            return datetime.strptime(str(upload_date), "%Y%m%d").date().isoformat()
+        except Exception:
+            return str(upload_date)
+    if timestamp:
+        return datetime.fromtimestamp(int(timestamp), tz=timezone.utc).date().isoformat()
+    return None
+
+
+def _extract_info(url: str) -> dict[str, Any]:
+    options = {
+        "quiet": True,
+        "skip_download": True,
+        "nocheckcertificate": True,
+        "extract_flat": False,
+    }
+    with yt_dlp.YoutubeDL(options) as ydl:
+        return ydl.extract_info(url, download=False)
+
+
+def _instagram_follower_count(info: dict[str, Any]) -> int | None:
+    username = info.get("uploader_id") or info.get("uploader") or info.get("channel")
+    if not username:
+        return None
+    loader = instaloader.Instaloader(download_pictures=False, download_videos=False, download_comments=False, save_metadata=False, quiet=True)
+    try:
+        profile = instaloader.Profile.from_username(loader.context, str(username).lstrip("@"))
+        return int(profile.followers)
+    except Exception:
+        return None
+
+
+def _youtube_follower_count(info: dict[str, Any]) -> int | None:
+    for key in ("channel_follower_count", "uploader_subscriber_count", "subscriber_count"):
+        value = info.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except Exception:
+                continue
+    return None
+
+
+def _build_segments(url: str, info: dict[str, Any]) -> list[TranscriptSegment]:
+    platform = _extract_platform(url)
+    if platform == "youtube":
+        try:
+            return fetch_youtube_transcript(url, info)
+        except Exception:
+            return fetch_fallback_transcript(url, info)
+    return fetch_fallback_transcript(url, info)
+
+
+def inspect_video(url: str, video_id: str, label: str, pair_id: str) -> tuple[VideoMetadata, list[TranscriptSegment], dict[str, Any]]:
+    info = _extract_info(url)
+    platform = _extract_platform(url)
+    segments = _build_segments(url, info)
+    transcript_text = segments_to_text(segments)
+    views = int(info.get("view_count") or info.get("play_count") or 0)
+    likes = int(info.get("like_count") or 0)
+    comments = int(info.get("comment_count") or 0)
+    if platform == "youtube":
+        creator = str(info.get("channel") or info.get("uploader") or "Unknown creator")
+        follower_count = _youtube_follower_count(info)
+    else:
+        creator = str(info.get("uploader") or info.get("channel") or "Unknown creator")
+        follower_count = _instagram_follower_count(info)
+    engagement_rate = round(((likes + comments) / views * 100.0) if views else 0.0, 2)
+    metadata = VideoMetadata(
+        video_id=video_id,
+        label=label,
+        platform=platform,
+        url=url,
+        title=str(info.get("title") or "Untitled video"),
+        creator=creator,
+        follower_count=follower_count,
+        views=views,
+        likes=likes,
+        comments=comments,
+        hashtags=_extract_hashtags(info),
+        upload_date=_format_upload_date(info),
+        duration_seconds=int(info.get("duration") or 0) or None,
+        engagement_rate=engagement_rate,
+        transcript_preview=transcript_text[:500],
+        hook_preview=first_seconds_preview(segments),
+        chunk_count=0,
+    )
+    return metadata, segments, info
