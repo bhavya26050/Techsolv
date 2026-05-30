@@ -142,32 +142,40 @@ def record_credit_usage(
         )
 
 
-def credit_usage_totals(pair_id: str, thread_id: str | None = None) -> dict[str, float]:
+def credit_usage_totals(
+    pair_id: str,
+    thread_id: str | None = None,
+    provider: str | None = None,
+    date_from_iso: str | None = None,
+) -> dict[str, float]:
+    """
+    Returns aggregated totals for credit usage filtered by optional thread, provider, and date_from_iso (inclusive).
+    If date_from_iso is provided it should be an ISO timestamp string; commonly used to implement daily resets.
+    """
     with connect() as conn:
+        clauses = ["pair_id = ?"]
+        params: list[object] = [pair_id]
         if thread_id:
-            row = conn.execute(
-                """
-                SELECT
-                    COALESCE(SUM(input_tokens_est), 0) AS input_tokens,
-                    COALESCE(SUM(output_tokens_est), 0) AS output_tokens,
-                    COALESCE(SUM(credits_used_usd), 0.0) AS credits_used
-                FROM credit_usage
-                WHERE pair_id = ? AND thread_id = ?
-                """,
-                (pair_id, thread_id),
-            ).fetchone()
-        else:
-            row = conn.execute(
-                """
-                SELECT
-                    COALESCE(SUM(input_tokens_est), 0) AS input_tokens,
-                    COALESCE(SUM(output_tokens_est), 0) AS output_tokens,
-                    COALESCE(SUM(credits_used_usd), 0.0) AS credits_used
-                FROM credit_usage
-                WHERE pair_id = ?
-                """,
-                (pair_id,),
-            ).fetchone()
+            clauses.append("thread_id = ?")
+            params.append(thread_id)
+        if provider:
+            clauses.append("provider = ?")
+            params.append(provider)
+        if date_from_iso:
+            clauses.append("created_at >= ?")
+            params.append(date_from_iso)
+
+        where = " AND ".join(clauses)
+        sql = f"""
+            SELECT
+                COALESCE(SUM(input_tokens_est), 0) AS input_tokens,
+                COALESCE(SUM(output_tokens_est), 0) AS output_tokens,
+                COALESCE(SUM(credits_used_usd), 0.0) AS credits_used
+            FROM credit_usage
+            WHERE {where}
+            """
+        row = conn.execute(sql, tuple(params)).fetchone()
+
     return {
         "input_tokens": float(row["input_tokens"]),
         "output_tokens": float(row["output_tokens"]),

@@ -79,10 +79,14 @@ def get_pair(pair_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/credits/{pair_id}")
-def get_credits(pair_id: str, thread_id: str | None = None) -> dict[str, float]:
+def get_credits(pair_id: str, thread_id: str | None = None, provider: str | None = None) -> dict[str, float]:
     payload = load_pair(pair_id)
     if not payload:
         raise HTTPException(status_code=404, detail="Unknown pair_id")
+    if provider:
+        from .budget import provider_credit_status
+
+        return provider_credit_status(pair_id, provider, thread_id)
     return credit_status(pair_id, thread_id)
 
 
@@ -92,13 +96,17 @@ async def chat_stream(request: ChatRequest):
     if not pair_payload:
         raise HTTPException(status_code=404, detail="Unknown pair_id")
 
-    status = credit_status(request.pair_id, request.thread_id)
-    if status["remaining_usd"] <= minimum_remaining_credit_usd():
+    # Enforce per-provider budget (and optionally daily reset) before starting generation
+    provider, model_name = selected_llm_identity()
+    from .budget import provider_credit_status
+
+    provider_status = provider_credit_status(request.pair_id, provider, request.thread_id)
+    if provider_status["remaining_usd"] <= minimum_remaining_credit_usd():
         raise HTTPException(
             status_code=402,
             detail=(
-                "Credit budget exhausted for this thread. "
-                "Increase CREDIT_BUDGET_USD or reduce request volume/model cost."
+                f"Credit budget exhausted for provider '{provider}'. "
+                "Increase provider budget or reduce request volume/model cost."
             ),
         )
 
@@ -115,7 +123,6 @@ async def chat_stream(request: ChatRequest):
             yield f"event: token\ndata: {json.dumps(token)}\n\n"
         output_tokens_est = estimate_tokens_from_text("x" * output_chars)
         credits_used_usd = estimate_credits_used_usd(input_tokens_est=input_tokens_est, output_tokens_est=output_tokens_est)
-        provider, model_name = selected_llm_identity()
         record_credit_usage(
             pair_id=request.pair_id,
             thread_id=request.thread_id,
@@ -125,7 +132,10 @@ async def chat_stream(request: ChatRequest):
             output_tokens_est=output_tokens_est,
             credits_used_usd=credits_used_usd,
         )
-        yield f"event: budget\ndata: {json.dumps(credit_status(request.pair_id, request.thread_id))}\n\n"
+        # Emit updated provider-specific and overall budget info
+        from .budget import provider_credit_status
+        overall = credit_status(request.pair_id, request.thread_id)
+        yield f"event: budget\ndata: {json.dumps({'overall': overall, 'provider': provider_credit_status(request.pair_id, provider, request.thread_id)})}\n\n"
         yield "event: done\ndata: {}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

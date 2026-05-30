@@ -47,3 +47,43 @@ def credit_status(pair_id: str, thread_id: str | None = None) -> dict[str, float
         "input_tokens_est": totals["input_tokens"],
         "output_tokens_est": totals["output_tokens"],
     }
+
+
+def _date_start_iso_utc() -> str:
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    start = datetime(year=now.year, month=now.month, day=now.day, tzinfo=timezone.utc)
+    return start.isoformat()
+
+
+def provider_credit_status(pair_id: str, provider: str, thread_id: str | None = None) -> dict[str, float]:
+    """Return credit totals and remaining budget for a specific provider.
+
+    If DAILY_RESET_ENABLED is true, totals are calculated from the start of the current UTC day.
+    """
+    cfg = settings()
+    daily_reset = str(cfg.get("daily_reset_enabled", "true")).lower() in ("1", "true", "yes")
+    date_from = _date_start_iso_utc() if daily_reset else None
+    totals = credit_usage_totals(pair_id, thread_id=thread_id, provider=provider, date_from_iso=date_from)
+
+    # provider-specific budget fallback to overall budget if provider-specific not set
+    if provider == "gemini":
+        budget_usd = max(0.0, _safe_float(cfg.get("gemini_credit_budget_usd", cfg.get("credit_budget_usd", 1.5)), 1.5))
+    elif provider == "openai":
+        budget_usd = max(0.0, _safe_float(cfg.get("openai_credit_budget_usd", cfg.get("credit_budget_usd", 1.5)), 1.5))
+    else:
+        budget_usd = max(0.0, _safe_float(cfg.get("credit_budget_usd", 3.0), 3.0))
+
+    used_usd = round(totals["credits_used"], 8)
+    remaining_usd = round(max(0.0, budget_usd - used_usd), 8)
+    used_pct = round((used_usd / budget_usd * 100.0) if budget_usd > 0 else 100.0, 2)
+    return {
+        "provider": provider,
+        "budget_usd": budget_usd,
+        "used_usd": used_usd,
+        "remaining_usd": remaining_usd,
+        "used_percent": min(100.0, used_pct),
+        "input_tokens_est": totals["input_tokens"],
+        "output_tokens_est": totals["output_tokens"],
+    }
