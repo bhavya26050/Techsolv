@@ -95,7 +95,13 @@ def inspect_video(url: str, video_id: str, label: str, pair_id: str) -> tuple[Vi
     platform = _extract_platform(url)
     segments = _build_segments(url, info)
     transcript_text = segments_to_text(segments)
-    views = int(info.get("view_count") or info.get("play_count") or 0)
+    raw_views = info.get("view_count") if info.get("view_count") is not None else info.get("play_count")
+    views = None
+    if raw_views is not None:
+        try:
+            views = int(raw_views)
+        except Exception:
+            views = None
     likes = int(info.get("like_count") or 0)
     comments = int(info.get("comment_count") or 0)
     if platform == "youtube":
@@ -104,6 +110,11 @@ def inspect_video(url: str, video_id: str, label: str, pair_id: str) -> tuple[Vi
     else:
         creator = str(info.get("uploader") or info.get("channel") or "Unknown creator")
         follower_count = _instagram_follower_count(info)
+    # Instagram frequently exposes engagement signals but omits a reliable view count.
+    # In that case, keep views as None instead of showing a misleading zero.
+    if platform == "instagram" and (views is None or views <= 0) and (likes > 0 or comments > 0):
+        views = None
+
     engagement_rate = round(((likes + comments) / views * 100.0) if views else 0.0, 2)
     metadata = VideoMetadata(
         video_id=video_id,

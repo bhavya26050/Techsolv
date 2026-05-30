@@ -33,7 +33,7 @@ class VideoMetadata(BaseModel):
     title: str
     creator: str
     follower_count: int | None = None
-    views: int = 0
+    views: int | None = None
     likes: int = 0
     comments: int = 0
     hashtags: list[str] = Field(default_factory=list)

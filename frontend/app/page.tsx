@@ -10,7 +10,7 @@ type VideoMetadata = {
   title: string;
   creator: string;
   follower_count?: number | null;
-  views: number;
+  views: number | null;
   likes: number;
   comments: number;
   hashtags: string[];
