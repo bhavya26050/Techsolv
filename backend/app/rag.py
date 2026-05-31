@@ -22,10 +22,6 @@ class Citation:
 
 
 def selected_llm_identity(override_model: str | None = None) -> tuple[str, str]:
-    """Return ('gemini', model) tuple. Overrides take precedence; otherwise env settings are used.
-
-    Raises RuntimeError if GOOGLE_API_KEY is not configured.
-    """
     config = settings()
     model = override_model or config.get("gemini_model")
     if config.get("google_api_key"):
@@ -85,7 +81,6 @@ def _format_context(citations: Iterable[Citation], pair_payload: dict) -> str:
 
 
 def _chunk_to_text(chunk: object) -> str:
-    """Normalize streaming chunks from Gemini/OpenAI-style clients into plain text."""
     content = getattr(chunk, "content", chunk)
     if content is None:
         return ""

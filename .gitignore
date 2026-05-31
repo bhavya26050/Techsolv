@@ -4,6 +4,5 @@ __pycache__
 *.pyc
 .venv
 node_modules
-backend/data
 frontend/.next
 frontend/node_modules

@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: techsolv-backend
+    env: python
+    plan: free
+    rootDir: backend
+    buildCommand: python -m pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-flash-latest
+      - key: CREDIT_BUDGET_USD
+        value: "3.00"
+      - key: GEMINI_CREDIT_BUDGET_USD
+        value: "3.00"
+      - key: DAILY_RESET_ENABLED
+        value: "true"
+      - key: INPUT_COST_PER_MILLION_TOKENS
+        value: "0.10"
+      - key: OUTPUT_COST_PER_MILLION_TOKENS
+        value: "0.40"
+      - key: MINIMUM_REMAINING_CREDIT_USD
+        value: "0.05"
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB_NAME
+        value: techsolv

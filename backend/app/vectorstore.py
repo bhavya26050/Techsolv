@@ -1,23 +1,18 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
+from math import sqrt
 from typing import Iterable
 
-from langchain_chroma import Chroma
-from langchain_core.documents import Document
 from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from .config import settings
+from .storage import _mongo_db
 
 
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 SPLITTER = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=140)
-
-
-def _collection_path() -> Path:
-    return Path(settings()["chroma_path"])
 
 
 @lru_cache(maxsize=1)
@@ -25,21 +20,22 @@ def get_embeddings() -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
 
-@lru_cache(maxsize=1)
-def get_vectorstore() -> Chroma:
-    path = _collection_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return Chroma(
-        collection_name="creator_video_chunks",
-        persist_directory=str(path),
-        embedding_function=get_embeddings(),
-    )
+def _chunks_collection():
+    return _mongo_db().video_chunks
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    numerator = sum(x * y for x, y in zip(left, right))
+    left_norm = sqrt(sum(x * x for x in left))
+    right_norm = sqrt(sum(y * y for y in right))
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return numerator / (left_norm * right_norm)
 
 
 def chunk_transcript(transcript_text: str, *, pair_id: str, video_id: str, label: str, source_url: str, title: str, creator: str) -> list[Document]:
-    chunks = SPLITTER.split_text(transcript_text)
     documents: list[Document] = []
-    for index, chunk in enumerate(chunks):
+    for index, chunk in enumerate(SPLITTER.split_text(transcript_text)):
         documents.append(
             Document(
                 page_content=chunk,
@@ -62,11 +58,60 @@ def upsert_documents(documents: Iterable[Document]) -> None:
     docs = list(documents)
     if not docs:
         return
-    store = get_vectorstore()
-    store.add_documents(docs)
+    texts = [doc.page_content for doc in docs]
+    embeddings = get_embeddings().embed_documents(texts)
+    collection = _chunks_collection()
+    for doc, embedding in zip(docs, embeddings):
+        metadata = dict(doc.metadata)
+        collection.update_one(
+            {"pair_id": metadata["pair_id"], "chunk_id": metadata["chunk_id"]},
+            {
+                "$set": {
+                    "pair_id": metadata["pair_id"],
+                    "video_id": metadata["video_id"],
+                    "chunk_id": metadata["chunk_id"],
+                    "chunk_index": metadata["chunk_index"],
+                    "label": metadata["label"],
+                    "source_url": metadata["source_url"],
+                    "title": metadata["title"],
+                    "creator": metadata["creator"],
+                    "page_content": doc.page_content,
+                    "embedding": embedding,
+                }
+            },
+            upsert=True,
+        )
 
 
 def search_documents(query: str, pair_id: str, limit: int = 6) -> list[Document]:
-    store = get_vectorstore()
-    results = store.similarity_search(query, k=limit, filter={"pair_id": pair_id})
-    return results
+    query_embedding = get_embeddings().embed_query(query)
+    docs = list(
+        _chunks_collection().find(
+            {"pair_id": pair_id},
+            {"_id": 0, "page_content": 1, "embedding": 1, "video_id": 1, "chunk_id": 1, "chunk_index": 1, "label": 1, "source_url": 1, "title": 1, "creator": 1},
+        )
+    )
+    scored: list[tuple[float, Document]] = []
+    for item in docs:
+        embedding = [float(value) for value in item.get("embedding", [])]
+        score = _cosine_similarity(query_embedding, embedding)
+        scored.append(
+            (
+                score,
+                Document(
+                    page_content=str(item.get("page_content", "")),
+                    metadata={
+                        "pair_id": pair_id,
+                        "video_id": str(item.get("video_id", "")),
+                        "chunk_id": str(item.get("chunk_id", "")),
+                        "chunk_index": int(item.get("chunk_index", 0)),
+                        "label": str(item.get("label", "")),
+                        "source_url": str(item.get("source_url", "")),
+                        "title": str(item.get("title", "")),
+                        "creator": str(item.get("creator", "")),
+                    },
+                ),
+            )
+        )
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [doc for _, doc in scored[:limit]]

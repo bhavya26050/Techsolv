@@ -110,8 +110,6 @@ def inspect_video(url: str, video_id: str, label: str, pair_id: str) -> tuple[Vi
     else:
         creator = str(info.get("uploader") or info.get("channel") or "Unknown creator")
         follower_count = _instagram_follower_count(info)
-    # Instagram frequently exposes engagement signals but omits a reliable view count.
-    # In that case, keep views as None instead of showing a misleading zero.
     if platform == "instagram" and (views is None or views <= 0) and (likes > 0 or comments > 0):
         views = None
 

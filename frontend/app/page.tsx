@@ -210,7 +210,6 @@ export default function Home() {
   }, [pair?.pair_id, setPair, threadId]);
 
     useEffect(() => {
-      // Fetch providers and automatically test available ones in priority order.
       (async () => {
         try {
           const r = await fetch(`${BACKEND_URL}/api/providers`);
@@ -218,14 +217,12 @@ export default function Home() {
           const respBody = (body ?? {}) as any;
           setProviders(respBody ?? {});
 
-          // If user already selected a provider earlier, skip auto-detect
           if (selectedProvider) return;
 
           const priority = ["gemini"];
           for (const key of priority) {
             const info = respBody?.[key];
             if (!info || !info.available) continue;
-            // try a quick live test
             setTesting(true);
             setTestStatus(null);
             try {
@@ -242,7 +239,6 @@ export default function Home() {
                 setTesting(false);
                 return;
               } else {
-                // record failure and try next
                 setTestStatus({ ok: false, message: `${key} test failed: ${j.error ?? 'unknown'}` });
               }
             } catch (err) {
@@ -252,7 +248,6 @@ export default function Home() {
             }
           }
 
-          // No provider succeeded
           setTestStatus({ ok: false, message: 'No working Gemini provider found. Set GOOGLE_API_KEY.' });
         } catch {
           setProviders({});
@@ -367,7 +362,6 @@ export default function Home() {
               try {
                 setCredits(JSON.parse(dataLine.slice(6)) as CreditStatus);
               } catch {
-                // Ignore malformed budget events.
               }
             }
           }
@@ -398,12 +392,11 @@ export default function Home() {
 
   function creditSeverityClass() {
     if (!budgetIsFinite) return "good";
-    // Remaining percent thresholds: >40% green, 15-40% yellow, <15% red
     if (remainingPercent > 40) return "good";
     if (remainingPercent > 15) return "warn";
     return "low";
   }
-  const criticalThreshold = 5; // percent
+  const criticalThreshold = 5;
   const [flash, setFlash] = useState(false);
 
   useEffect(() => {
@@ -438,7 +431,7 @@ export default function Home() {
         <div className="panel stats">
           <div className="stat">
             <div className="stat-label">Vector DB</div>
-            <div className="stat-value">Chroma</div>
+            <div className="stat-value">MongoDB</div>
           </div>
           <div className="stat">
             <div className="stat-label">Orchestration</div>

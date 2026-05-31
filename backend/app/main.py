@@ -95,11 +95,6 @@ def get_credits(pair_id: str, thread_id: str | None = None, provider: str | None
 
 @app.get("/api/providers")
 def get_providers() -> dict[str, dict[str, str | bool]]:
-    """Return available providers and their configured default models.
-
-    Example response:
-    {"gemini": {"available": True, "model": "gemini-2.0-flash"}, "openai": {...}}
-    """
     cfg = settings()
     return {
         "gemini": {"available": bool(cfg.get("google_api_key")), "model": cfg.get("gemini_model")}
@@ -108,25 +103,28 @@ def get_providers() -> dict[str, dict[str, str | bool]]:
 
 @app.post("/api/admin/reload-config")
 def reload_config() -> dict:
-    """Reload configuration from environment and .env (dev-only).
-
-    This clears the cached `settings()` so changes to .env are picked up without restarting.
-    """
     try:
         settings.cache_clear()
     except Exception:
         pass
+    try:
+        from . import storage
+
+        storage._MONGO_CLIENT = None
+    except Exception:
+        pass
+    try:
+        from .vectorstore import get_embeddings
+
+        get_embeddings.cache_clear()
+    except Exception:
+        pass
     cfg = settings()
-    return {"ok": True, "gemini_available": bool(cfg.get("google_api_key")), "openai_available": bool(cfg.get("openai_api_key"))}
+    return {"ok": True, "gemini_available": bool(cfg.get("google_api_key"))}
 
 
 @app.post("/api/providers/test")
 def test_provider(payload: dict = Body(...)) -> dict:
-    """Perform a lightweight live test against a provider.
-
-    Expected payload: {"provider":"gemini"|"openai", "model": "model-name"}
-    This performs a minimal generation request; it will consume a small amount of quota on real keys.
-    """
     provider = str(payload.get("provider", "")).lower()
     model = payload.get("model") or ""
     cfg = settings()
@@ -154,11 +152,9 @@ async def chat_stream(request: ChatRequest):
     pair_payload = load_pair(request.pair_id)
     if not pair_payload:
         raise HTTPException(status_code=404, detail="Unknown pair_id")
-    # Determine provider and enforce per-provider budget (and optionally daily reset) before starting generation
     try:
         provider, model_name = selected_llm_identity(request.model)
     except RuntimeError as exc:
-        # Surface a clear HTTP error so the frontend can show a user-friendly message
         raise HTTPException(status_code=503, detail=str(exc))
     from .budget import provider_credit_status
 
@@ -200,7 +196,6 @@ async def chat_stream(request: ChatRequest):
             output_tokens_est=output_tokens_est,
             credits_used_usd=credits_used_usd,
         )
-        # Emit updated provider-specific and overall budget info
         from .budget import provider_credit_status
         overall = credit_status(request.pair_id, request.thread_id)
         yield f"event: budget\ndata: {json.dumps({'overall': overall, 'provider': provider_credit_status(request.pair_id, provider, request.thread_id)})}\n\n"
