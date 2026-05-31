@@ -41,4 +41,5 @@ def settings() -> dict[str, str]:
         "input_cost_per_million_tokens": os.getenv("INPUT_COST_PER_MILLION_TOKENS", "0.1").strip(),
         "output_cost_per_million_tokens": os.getenv("OUTPUT_COST_PER_MILLION_TOKENS", "0.4").strip(),
         "minimum_remaining_credit_usd": os.getenv("MINIMUM_REMAINING_CREDIT_USD", "0.05").strip(),
+        "gemini_request_timeout_seconds": os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "60").strip(),
     }

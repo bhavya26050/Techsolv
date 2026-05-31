@@ -145,8 +145,9 @@ def test_provider(payload: dict = Body(...)) -> dict:
         model_name = model or cfg.get("gemini_model")
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
         body = {"contents": [{"parts": [{"text": "Say ok"}]}]}
+        timeout_seconds = float(cfg.get("gemini_request_timeout_seconds") or 60)
         try:
-            resp = requests.post(url, json=body, headers={"Content-Type": "application/json", "X-goog-api-key": api_key}, timeout=10)
+            resp = requests.post(url, json=body, headers={"Content-Type": "application/json", "X-goog-api-key": api_key}, timeout=timeout_seconds)
             resp.raise_for_status()
             j = resp.json()
             return {"ok": True, "provider": "gemini", "model": model_name, "status_code": resp.status_code, "result": str(j) }

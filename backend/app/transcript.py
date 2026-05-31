@@ -38,13 +38,14 @@ def _cookiefile_path() -> str | None:
     return str(temp_path)
 
 
-def _ytdlp_options() -> dict[str, Any]:
+def _ytdlp_options(*, use_cookies: bool = True, player_client: str | None = None) -> dict[str, Any]:
     options: dict[str, Any] = {"quiet": True, "skip_download": True}
-    cookiefile = _cookiefile_path()
+    cookiefile = _cookiefile_path() if use_cookies else None
     if cookiefile:
         options["cookiefile"] = cookiefile
     options.setdefault("noplaylist", True)
-    options["extractor_args"] = {"youtube": {"player_client": ["android"]}}
+    if player_client:
+        options["extractor_args"] = {"youtube": {"player_client": [player_client]}}
     return options
 
 

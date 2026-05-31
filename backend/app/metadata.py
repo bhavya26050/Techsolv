@@ -48,22 +48,39 @@ def _format_upload_date(info: dict[str, Any]) -> str | None:
 
 
 def _extract_info(url: str) -> dict[str, Any]:
-    options = _ytdlp_options()
-    options["nocheckcertificate"] = True
-    options["extract_flat"] = False
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            return ydl.extract_info(url, download=False)
-    except Exception as exc:
-        msg = str(exc)
-        # If yt-dlp complains the requested format is not available, retry without forcing format
-        if "Requested format is not available" in msg or "format not available" in msg:
-            fallback = options.copy()
-            fallback.pop("format", None)
-            fallback["noplaylist"] = True
-            with yt_dlp.YoutubeDL(fallback) as ydl:
+    attempts: list[dict[str, Any]] = []
+    attempts.append(_ytdlp_options(use_cookies=False, player_client="android"))
+
+    cookie_options = _ytdlp_options(use_cookies=True, player_client="web")
+    cookie_options["nocheckcertificate"] = True
+    cookie_options["extract_flat"] = False
+    attempts.append(cookie_options)
+
+    web_options = _ytdlp_options(use_cookies=False, player_client="web")
+    web_options["nocheckcertificate"] = True
+    web_options["extract_flat"] = False
+    attempts.append(web_options)
+
+    last_error: Exception | None = None
+    for options in attempts:
+        options["nocheckcertificate"] = True
+        options["extract_flat"] = False
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
                 return ydl.extract_info(url, download=False)
-        raise
+        except Exception as exc:
+            last_error = exc
+            msg = str(exc)
+            if "Requested format is not available" in msg or "format not available" in msg:
+                fallback = options.copy()
+                fallback.pop("format", None)
+                fallback.pop("extractor_args", None)
+                fallback["noplaylist"] = True
+                with yt_dlp.YoutubeDL(fallback) as ydl:
+                    return ydl.extract_info(url, download=False)
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Failed to extract video info")
 
 
 def _instagram_follower_count(info: dict[str, Any]) -> int | None:
