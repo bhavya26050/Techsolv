@@ -1,27 +1,39 @@
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from math import sqrt
 from typing import Iterable
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from .storage import _mongo_db
 
 
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DIMENSION = 512
 SPLITTER = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=140)
-
-
-@lru_cache(maxsize=1)
-def get_embeddings() -> HuggingFaceEmbeddings:
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+TOKEN_PATTERN = re.compile(r"[a-z0-9']+")
 
 
 def _chunks_collection():
     return _mongo_db().video_chunks
+
+
+def _tokenize(text: str) -> list[str]:
+    return TOKEN_PATTERN.findall(text.lower())
+
+
+def _vectorize(text: str) -> list[float]:
+    vector = [0.0] * DIMENSION
+    tokens = _tokenize(text)
+    if not tokens:
+        return vector
+    scale = 1.0 / len(tokens)
+    for token in tokens:
+        index = hash(token) % DIMENSION
+        vector[index] += scale
+    return vector
 
 
 def _cosine_similarity(left: list[float], right: list[float]) -> float:
@@ -58,10 +70,8 @@ def upsert_documents(documents: Iterable[Document]) -> None:
     docs = list(documents)
     if not docs:
         return
-    texts = [doc.page_content for doc in docs]
-    embeddings = get_embeddings().embed_documents(texts)
     collection = _chunks_collection()
-    for doc, embedding in zip(docs, embeddings):
+    for doc in docs:
         metadata = dict(doc.metadata)
         collection.update_one(
             {"pair_id": metadata["pair_id"], "chunk_id": metadata["chunk_id"]},
@@ -76,7 +86,7 @@ def upsert_documents(documents: Iterable[Document]) -> None:
                     "title": metadata["title"],
                     "creator": metadata["creator"],
                     "page_content": doc.page_content,
-                    "embedding": embedding,
+                    "embedding": _vectorize(doc.page_content),
                 }
             },
             upsert=True,
@@ -84,7 +94,7 @@ def upsert_documents(documents: Iterable[Document]) -> None:
 
 
 def search_documents(query: str, pair_id: str, limit: int = 6) -> list[Document]:
-    query_embedding = get_embeddings().embed_query(query)
+    query_embedding = _vectorize(query)
     docs = list(
         _chunks_collection().find(
             {"pair_id": pair_id},

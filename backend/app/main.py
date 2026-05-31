@@ -113,12 +113,6 @@ def reload_config() -> dict:
         storage._MONGO_CLIENT = None
     except Exception:
         pass
-    try:
-        from .vectorstore import get_embeddings
-
-        get_embeddings.cache_clear()
-    except Exception:
-        pass
     cfg = settings()
     return {"ok": True, "gemini_available": bool(cfg.get("google_api_key"))}
 
