@@ -51,8 +51,19 @@ def _extract_info(url: str) -> dict[str, Any]:
     options = _ytdlp_options()
     options["nocheckcertificate"] = True
     options["extract_flat"] = False
-    with yt_dlp.YoutubeDL(options) as ydl:
-        return ydl.extract_info(url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            return ydl.extract_info(url, download=False)
+    except Exception as exc:
+        msg = str(exc)
+        # If yt-dlp complains the requested format is not available, retry without forcing format
+        if "Requested format is not available" in msg or "format not available" in msg:
+            fallback = options.copy()
+            fallback.pop("format", None)
+            fallback["noplaylist"] = True
+            with yt_dlp.YoutubeDL(fallback) as ydl:
+                return ydl.extract_info(url, download=False)
+        raise
 
 
 def _instagram_follower_count(info: dict[str, Any]) -> int | None:

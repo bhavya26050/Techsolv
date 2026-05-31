@@ -43,6 +43,24 @@ def _ytdlp_options() -> dict[str, Any]:
     cookiefile = _cookiefile_path()
     if cookiefile:
         options["cookiefile"] = cookiefile
+    # Prefer a broadly available format (video+audio) to avoid extractor format selection failures
+    # and avoid accidentally trying to download playlists. If this format isn't available
+    # in the environment, extraction will retry without forcing the format.
+    options.setdefault("format", "bestvideo+bestaudio/best")
+    options.setdefault("noplaylist", True)
+    # Allow configuring JS runtimes for yt-dlp (deno/node) via env var `YTDLP_JS_RUNTIMES`.
+    # Some YouTube pages require a JS runtime to extract all formats.
+    try:
+        cfg = settings()
+        jsr = cfg.get("ytdlp_js_runtimes", "").strip()
+        if jsr:
+            options.setdefault("js_runtimes", jsr)
+        else:
+            # default to deno if available in the runtime environment
+            options.setdefault("js_runtimes", "deno")
+    except Exception:
+        # don't fail if settings() cannot be read for any reason
+        options.setdefault("js_runtimes", "deno")
     return options
 
 
