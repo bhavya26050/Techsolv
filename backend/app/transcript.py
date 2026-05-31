@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import yt_dlp
-import json
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from .config import settings
@@ -44,32 +43,7 @@ def _ytdlp_options() -> dict[str, Any]:
     cookiefile = _cookiefile_path()
     if cookiefile:
         options["cookiefile"] = cookiefile
-    # Prefer a broadly available format (video+audio) to avoid extractor format selection failures
-    # and avoid accidentally trying to download playlists. If this format isn't available
-    # in the environment, extraction will retry without forcing the format.
-    options.setdefault("format", "bestvideo+bestaudio/best")
     options.setdefault("noplaylist", True)
-    # Allow configuring JS runtimes for yt-dlp (deno/node) via env var `YTDLP_JS_RUNTIMES`.
-    # Some YouTube pages require a JS runtime to extract all formats.
-    # Only set js_runtimes when explicitly provided via env var. Accept simple
-    # values like 'deno' or a JSON string representing the expected dict.
-    try:
-        cfg = settings()
-        jsr = cfg.get("ytdlp_js_runtimes", "").strip()
-        if jsr:
-            try:
-                parsed = json.loads(jsr)
-                if isinstance(parsed, dict):
-                    options["js_runtimes"] = parsed
-                else:
-                    # if parsed JSON isn't a dict, fallthrough to using raw string
-                    options["js_runtimes"] = {str(jsr): {}}
-            except Exception:
-                # treat the value as a simple runtime name like 'deno' or 'node'
-                options["js_runtimes"] = {jsr: {}}
-    except Exception:
-        # If settings() fails, don't set js_runtimes at all
-        pass
     return options
 
 
