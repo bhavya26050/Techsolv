@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import threading
 from typing import Any
 
 from .config import settings
@@ -11,16 +12,29 @@ from .config import settings
 class StorageConfig:
     mongo_uri: str
     mongo_db_name: str
+    mongo_server_selection_timeout_ms: int
+    mongo_connect_timeout_ms: int
 
 
 _MONGO_CLIENT: Any | None = None
+_MONGO_CLIENT_LOCK = threading.Lock()
 
 
 def _storage_config() -> StorageConfig:
     cfg = settings()
+    try:
+        server_selection_timeout_ms = int(cfg.get("mongo_server_selection_timeout_ms", "5000"))
+    except Exception:
+        server_selection_timeout_ms = 5000
+    try:
+        connect_timeout_ms = int(cfg.get("mongo_connect_timeout_ms", "5000"))
+    except Exception:
+        connect_timeout_ms = 5000
     return StorageConfig(
         mongo_uri=cfg.get("mongo_uri", "").strip(),
         mongo_db_name=cfg.get("mongo_db_name", "techsolv").strip() or "techsolv",
+        mongo_server_selection_timeout_ms=server_selection_timeout_ms,
+        mongo_connect_timeout_ms=connect_timeout_ms,
     )
 
 
@@ -32,12 +46,19 @@ def _mongo_client():
     global _MONGO_CLIENT
     if _MONGO_CLIENT is not None:
         return _MONGO_CLIENT
-    cfg = _storage_config()
-    if not cfg.mongo_uri:
-        raise RuntimeError("MONGO_URI is required.")
-    from pymongo import MongoClient
+    with _MONGO_CLIENT_LOCK:
+        if _MONGO_CLIENT is not None:
+            return _MONGO_CLIENT
+        cfg = _storage_config()
+        if not cfg.mongo_uri:
+            raise RuntimeError("MONGO_URI is required.")
+        from pymongo import MongoClient
 
-    _MONGO_CLIENT = MongoClient(cfg.mongo_uri)
+        _MONGO_CLIENT = MongoClient(
+            cfg.mongo_uri,
+            serverSelectionTimeoutMS=cfg.mongo_server_selection_timeout_ms,
+            connectTimeoutMS=cfg.mongo_connect_timeout_ms,
+        )
     return _MONGO_CLIENT
 
 
@@ -102,10 +123,10 @@ def load_messages(pair_id: str, thread_id: str, limit: int = 12) -> list[dict[st
             {"pair_id": pair_id, "thread_id": thread_id},
             {"_id": 0, "role": 1, "content": 1, "created_at": 1},
         )
-        .sort("created_at", 1)
+        .sort("created_at", -1)
         .limit(limit)
     )
-    return [{"role": str(doc["role"]), "content": str(doc["content"])} for doc in docs]
+    return [{"role": str(doc["role"]), "content": str(doc["content"])} for doc in reversed(docs)]
 
 
 def record_credit_usage(
@@ -144,7 +165,10 @@ def credit_usage_totals(
     if provider:
         filters["provider"] = provider
     if date_from_iso:
-        filters["created_at"] = {"$gte": datetime.fromisoformat(date_from_iso)}
+        try:
+            filters["created_at"] = {"$gte": datetime.fromisoformat(date_from_iso)}
+        except ValueError as exc:
+            raise ValueError(f"Invalid ISO datetime for date_from_iso: {date_from_iso}") from exc
 
     result = list(
         _credit_collection().aggregate(

@@ -33,6 +33,8 @@ def settings() -> dict[str, str]:
         "gemini_credit_budget_usd": os.getenv("GEMINI_CREDIT_BUDGET_USD", "1.5").strip(),
         "mongo_uri": os.getenv("MONGO_URI", "").strip(),
         "mongo_db_name": os.getenv("MONGO_DB_NAME", "techsolv").strip(),
+        "mongo_server_selection_timeout_ms": os.getenv("MONGO_SERVER_SELECTION_TIMEOUT_MS", "5000").strip(),
+        "mongo_connect_timeout_ms": os.getenv("MONGO_CONNECT_TIMEOUT_MS", "5000").strip(),
         "daily_reset_enabled": os.getenv("DAILY_RESET_ENABLED", "true").strip().lower(),
         "input_cost_per_million_tokens": os.getenv("INPUT_COST_PER_MILLION_TOKENS", "0.1").strip(),
         "output_cost_per_million_tokens": os.getenv("OUTPUT_COST_PER_MILLION_TOKENS", "0.4").strip(),
