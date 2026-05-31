@@ -65,11 +65,26 @@ def health() -> dict[str, str]:
 @app.post("/api/ingest", response_model=IngestResponse)
 def ingest(request: IngestRequest) -> IngestResponse:
     pair_id = str(uuid.uuid4())
-    video_a_payload, chunks_a = _build_video_payload("A", "Video A", request.video_a_url, pair_id)
-    video_b_payload, chunks_b = _build_video_payload("B", "Video B", request.video_b_url, pair_id)
+    try:
+        video_a_payload, chunks_a = _build_video_payload("A", "Video A", request.video_a_url, pair_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Failed to ingest Video A: {exc}") from exc
+
+    try:
+        video_b_payload, chunks_b = _build_video_payload("B", "Video B", request.video_b_url, pair_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Failed to ingest Video B: {exc}") from exc
+
     pair_payload = {"pair_id": pair_id, "videos": [video_a_payload, video_b_payload]}
-    save_pair(pair_id, pair_payload)
-    upsert_documents([*chunks_a, *chunks_b])
+    try:
+        save_pair(pair_id, pair_payload)
+        upsert_documents([*chunks_a, *chunks_b])
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Failed to persist ingest results: {exc}") from exc
     return IngestResponse(pair_id=pair_id, videos=[video_a_payload, video_b_payload])
 
 
