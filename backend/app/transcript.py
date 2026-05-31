@@ -44,6 +44,7 @@ def _ytdlp_options() -> dict[str, Any]:
     if cookiefile:
         options["cookiefile"] = cookiefile
     options.setdefault("noplaylist", True)
+    options["extractor_args"] = {"youtube": {"player_client": ["android"]}}
     return options
 
 
