@@ -49,14 +49,14 @@ def _format_upload_date(info: dict[str, Any]) -> str | None:
 
 def _extract_info(url: str) -> dict[str, Any]:
     attempts: list[dict[str, Any]] = []
-    attempts.append(_ytdlp_options(use_cookies=False, player_client="android"))
+    attempts.append(_ytdlp_options(use_cookies=False, player_clients=["android", "tv_embedded", "web_safari", "web"]))
 
-    cookie_options = _ytdlp_options(use_cookies=True, player_client="web")
+    cookie_options = _ytdlp_options(use_cookies=True, player_clients=["web", "web_safari"])
     cookie_options["nocheckcertificate"] = True
     cookie_options["extract_flat"] = False
     attempts.append(cookie_options)
 
-    web_options = _ytdlp_options(use_cookies=False, player_client="web")
+    web_options = _ytdlp_options(use_cookies=False, player_clients=["web", "web_safari", "tv_embedded"])
     web_options["nocheckcertificate"] = True
     web_options["extract_flat"] = False
     attempts.append(web_options)
@@ -71,6 +71,8 @@ def _extract_info(url: str) -> dict[str, Any]:
         except Exception as exc:
             last_error = exc
             msg = str(exc)
+            if "cookies are no longer valid" in msg or "Sign in to confirm you’re not a bot" in msg:
+                continue
             if "Requested format is not available" in msg or "format not available" in msg:
                 fallback = options.copy()
                 fallback.pop("format", None)
