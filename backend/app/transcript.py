@@ -85,6 +85,17 @@ def fetch_fallback_transcript(video_url: str, info: dict[str, Any]) -> list[Tran
     description = str(info.get("description") or "").strip()
     if description:
         return [TranscriptSegment(start=0.0, duration=0.0, text=description)]
+    title = str(info.get("title") or "").strip()
+    creator = str(info.get("channel") or info.get("uploader") or "").strip()
+    fallback_parts = [part for part in [title, creator] if part]
+    if fallback_parts:
+        return [
+            TranscriptSegment(
+                start=0.0,
+                duration=0.0,
+                text="Transcript unavailable. Metadata: " + " | ".join(fallback_parts),
+            )
+        ]
     return []
 
 

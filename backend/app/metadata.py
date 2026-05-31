@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlparse
 from typing import Any
 
 import instaloader
@@ -22,6 +23,19 @@ def _extract_platform(url: str) -> str:
     if "instagram.com" in lowered:
         return "instagram"
     return "unknown"
+
+
+def _youtube_video_id_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.hostname and "youtu.be" in parsed.hostname:
+        return parsed.path.lstrip("/")
+    if parsed.hostname and "youtube.com" in parsed.hostname:
+        query = parse_qs(parsed.query)
+        if query.get("v"):
+            return query["v"][0]
+        if parsed.path.startswith("/shorts/"):
+            return parsed.path.split("/shorts/", 1)[1].split("/")[0]
+    return ""
 
 
 def _extract_hashtags(info: dict[str, Any]) -> list[str]:
@@ -48,6 +62,29 @@ def _format_upload_date(info: dict[str, Any]) -> str | None:
 
 
 def _extract_info(url: str) -> dict[str, Any]:
+    platform = _extract_platform(url)
+    if platform == "youtube":
+        video_id = _youtube_video_id_from_url(url)
+        title = f"YouTube video {video_id}" if video_id else "YouTube video"
+        return {
+            "id": video_id,
+            "display_id": video_id,
+            "title": title,
+            "channel": "Unavailable",
+            "uploader": "Unavailable",
+            "uploader_id": "",
+            "webpage_url": url,
+            "description": "",
+            "view_count": None,
+            "like_count": None,
+            "comment_count": None,
+            "tags": [],
+            "subtitles": {},
+            "automatic_captions": {},
+            "duration": None,
+            "timestamp": None,
+            "upload_date": None,
+        }
     attempts: list[dict[str, Any]] = []
     attempts.append(_ytdlp_options(use_cookies=False, player_clients=["android", "tv_embedded", "web_safari", "web"]))
 
