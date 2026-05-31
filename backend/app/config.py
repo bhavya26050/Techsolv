@@ -35,6 +35,8 @@ def settings() -> dict[str, str]:
         "mongo_db_name": os.getenv("MONGO_DB_NAME", "techsolv").strip(),
         "mongo_server_selection_timeout_ms": os.getenv("MONGO_SERVER_SELECTION_TIMEOUT_MS", "5000").strip(),
         "mongo_connect_timeout_ms": os.getenv("MONGO_CONNECT_TIMEOUT_MS", "5000").strip(),
+        "ytdlp_cookies_file": os.getenv("YTDLP_COOKIES_FILE", "").strip(),
+        "ytdlp_cookies_b64": os.getenv("YTDLP_COOKIES_B64", "").strip(),
         "daily_reset_enabled": os.getenv("DAILY_RESET_ENABLED", "true").strip().lower(),
         "input_cost_per_million_tokens": os.getenv("INPUT_COST_PER_MILLION_TOKENS", "0.1").strip(),
         "output_cost_per_million_tokens": os.getenv("OUTPUT_COST_PER_MILLION_TOKENS", "0.4").strip(),

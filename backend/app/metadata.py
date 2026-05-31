@@ -9,6 +9,7 @@ import yt_dlp
 
 from .schemas import VideoMetadata
 from .transcript import TranscriptSegment, fetch_fallback_transcript, fetch_youtube_transcript, first_seconds_preview, segments_to_text
+from .transcript import _ytdlp_options
 
 
 HASHTAG_RE = re.compile(r"#([A-Za-z0-9_]+)")
@@ -47,12 +48,9 @@ def _format_upload_date(info: dict[str, Any]) -> str | None:
 
 
 def _extract_info(url: str) -> dict[str, Any]:
-    options = {
-        "quiet": True,
-        "skip_download": True,
-        "nocheckcertificate": True,
-        "extract_flat": False,
-    }
+    options = _ytdlp_options()
+    options["nocheckcertificate"] = True
+    options["extract_flat"] = False
     with yt_dlp.YoutubeDL(options) as ydl:
         return ydl.extract_info(url, download=False)
 

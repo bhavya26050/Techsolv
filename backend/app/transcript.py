@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
+from functools import lru_cache
+import tempfile
+from pathlib import Path
 from typing import Any
 
 import yt_dlp
 from youtube_transcript_api import YouTubeTranscriptApi
+
+from .config import settings
 
 
 @dataclass
@@ -12,6 +18,32 @@ class TranscriptSegment:
     start: float
     duration: float
     text: str
+
+
+@lru_cache(maxsize=1)
+def _cookiefile_path() -> str | None:
+    cfg = settings()
+    cookiefile = cfg.get("ytdlp_cookies_file", "").strip()
+    if cookiefile:
+        return cookiefile
+    cookies_b64 = cfg.get("ytdlp_cookies_b64", "").strip()
+    if not cookies_b64:
+        return None
+    try:
+        raw = base64.b64decode(cookies_b64.encode("utf-8"), validate=True)
+    except Exception:
+        return None
+    temp_path = Path(tempfile.gettempdir()) / "techsolv-ytdlp-cookies.txt"
+    temp_path.write_bytes(raw)
+    return str(temp_path)
+
+
+def _ytdlp_options() -> dict[str, Any]:
+    options: dict[str, Any] = {"quiet": True, "skip_download": True}
+    cookiefile = _cookiefile_path()
+    if cookiefile:
+        options["cookiefile"] = cookiefile
+    return options
 
 
 def _video_id_from_info(info: dict[str, Any]) -> str:
@@ -56,7 +88,7 @@ def fetch_fallback_transcript(video_url: str, info: dict[str, Any]) -> list[Tran
 def _download_vtt_segments(vtt_url: str) -> list[TranscriptSegment]:
     if not vtt_url:
         return []
-    with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True}) as ydl:
+    with yt_dlp.YoutubeDL(_ytdlp_options()) as ydl:
         payload = ydl.urlopen(vtt_url).read().decode("utf-8", errors="ignore")
     segments: list[TranscriptSegment] = []
     buffer: list[str] = []
